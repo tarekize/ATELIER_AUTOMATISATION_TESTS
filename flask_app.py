@@ -7,14 +7,16 @@ from datetime import datetime
 import json
 from dotenv import load_dotenv
 
-load_dotenv()
+# Charger .env depuis le même dossier que flask_app.py
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 app = Flask(__name__)
 app.secret_key = "test-secret-key-change-in-production"
 
 # Configuration
-API_KEY = os.getenv("IPSTACK_API_KEY", "your_api_key_here")
-BASE_URL = os.getenv("IPSTACK_BASE_URL", "http://api.ipstack.com")
+API_KEY = os.getenv("IPSTACK_API_KEY", "fe6c3714873e3d1724bdfcba337a0382")
+# IMPORTANT: Plan gratuit IPStack = HTTP uniquement, PAS de /api dans l'URL
+BASE_URL = "http://api.ipstack.com"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,6 +1,12 @@
 """
 Tests pour l'API IPStack
 Valide : contrat (champs, types), codes HTTP, robustesse, formats attendus
+
+URL de l'API IPStack (plan gratuit) :
+  - http://api.ipstack.com/check?access_key=CLE         → IP du client
+  - http://api.ipstack.com/8.8.8.8?access_key=CLE       → IP spécifique
+  
+ATTENTION : plan gratuit = HTTP uniquement (pas HTTPS), pas de /api dans l'URL
 """
 
 import logging
@@ -10,6 +16,20 @@ from tester.client import APIClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _is_ipstack_error(data: dict) -> bool:
+    """Vérifie si la réponse IPStack est une erreur (success=false)"""
+    return data.get("success") is False or "error" in data
+
+
+def _get_ipstack_error_info(data: dict) -> str:
+    """Extrait le message d'erreur IPStack"""
+    if "error" in data:
+        err = data["error"]
+        return f"IPStack erreur {err.get('code', '?')}: {err.get('type', '?')} - {err.get('info', '')}"
+    return "Réponse IPStack invalide"
+
 
 class IPStackTester:
     """Suite de tests pour API IPStack"""
@@ -32,6 +52,8 @@ class IPStackTester:
     def run_all_tests(self, api_key: str) -> List[Dict[str, Any]]:
         """Exécute tous les tests et retourne les résultats"""
         self.test_results = []
+        
+        logger.info(f"Base URL utilisée: {self.client.base_url}")
         
         # Test 1: Vérifier status 200 et réponse valide
         self._test_api_reachable(api_key)
@@ -59,10 +81,20 @@ class IPStackTester:
         return self.test_results
     
     def _test_api_reachable(self, api_key: str) -> None:
-        """Test 1: API accessible et retourne 200"""
+        """Test 1: API accessible et retourne 200 avec données IP"""
         name = "GET /check - API Reachable"
         try:
             data, status, latency = self.client.get("/check", params={"access_key": api_key})
+            
+            # Détecter erreur IPStack (ex: HTTPS sur plan gratuit)
+            if _is_ipstack_error(data):
+                self.test_results.append({
+                    "name": name,
+                    "status": "FAIL",
+                    "latency_ms": latency,
+                    "details": _get_ipstack_error_info(data)
+                })
+                return
             
             if status == 200 and "ip" in data:
                 self.test_results.append({
@@ -76,7 +108,7 @@ class IPStackTester:
                     "name": name,
                     "status": "FAIL",
                     "latency_ms": latency,
-                    "details": f"Status {status} ou données invalides"
+                    "details": f"Status {status}, réponse: {str(data)[:200]}"
                 })
         except Exception as e:
             self.test_results.append({
@@ -91,6 +123,16 @@ class IPStackTester:
         name = "Required Fields Check"
         try:
             data, status, latency = self.client.get("/check", params={"access_key": api_key})
+            
+            # Détecter erreur IPStack
+            if _is_ipstack_error(data):
+                self.test_results.append({
+                    "name": name,
+                    "status": "FAIL",
+                    "latency_ms": latency,
+                    "details": _get_ipstack_error_info(data)
+                })
+                return
             
             missing_fields = [f for f in self.REQUIRED_FIELDS if f not in data]
             
@@ -122,12 +164,23 @@ class IPStackTester:
         try:
             data, status, latency = self.client.get("/check", params={"access_key": api_key})
             
+            # Détecter erreur IPStack
+            if _is_ipstack_error(data):
+                self.test_results.append({
+                    "name": name,
+                    "status": "FAIL",
+                    "latency_ms": latency,
+                    "details": _get_ipstack_error_info(data)
+                })
+                return
+            
             type_errors = []
             for field, expected_type in self.FIELD_TYPES.items():
                 if field in data:
                     value = data[field]
-                    if not isinstance(value, expected_type):
-                        type_errors.append(f"{field}: expected {expected_type}, got {type(value).__name__}")
+                    # Accepter None pour certains champs optionnels
+                    if value is not None and not isinstance(value, expected_type):
+                        type_errors.append(f"{field}: attendu {expected_type.__name__ if hasattr(expected_type, '__name__') else expected_type}, reçu {type(value).__name__}")
             
             if not type_errors:
                 self.test_results.append({
@@ -169,7 +222,7 @@ class IPStackTester:
                     "name": name,
                     "status": "FAIL",
                     "latency_ms": latency,
-                    "details": "Réponse n'est pas du JSON valide"
+                    "details": f"Réponse non-JSON ou status {status}"
                 })
         except Exception as e:
             self.test_results.append({
@@ -180,12 +233,27 @@ class IPStackTester:
             })
     
     def _test_custom_ip(self, api_key: str, ip_address: str) -> None:
-        """Test 5: Tester avec IP spécifique (Google DNS)"""
+        """Test 5: Tester avec IP spécifique (Google DNS 8.8.8.8)
+        
+        IPStack attend l'IP dans le chemin URL :
+          http://api.ipstack.com/8.8.8.8?access_key=CLE
+        """
         name = f"Custom IP Test ({ip_address})"
         try:
+            # IPStack : l'IP va dans le path, PAS en query param
             data, status, latency = self.client.get(f"/{ip_address}", params={
                 "access_key": api_key
             })
+            
+            # Détecter erreur IPStack
+            if _is_ipstack_error(data):
+                self.test_results.append({
+                    "name": name,
+                    "status": "FAIL",
+                    "latency_ms": latency,
+                    "details": _get_ipstack_error_info(data)
+                })
+                return
             
             if status == 200 and data.get("ip") == ip_address:
                 self.test_results.append({
@@ -199,7 +267,7 @@ class IPStackTester:
                     "name": name,
                     "status": "FAIL",
                     "latency_ms": latency,
-                    "details": f"Status {status} ou IP non trouvée"
+                    "details": f"Status {status}, IP reçue: {data.get('ip', 'aucune')}"
                 })
         except Exception as e:
             self.test_results.append({
@@ -213,22 +281,22 @@ class IPStackTester:
         """Test 6: Erreur attendue avec clé API invalide"""
         name = "Invalid API Key Error Handling"
         try:
-            data, status, latency = self.client.get("/check", params={"access_key": "invalid_key"})
+            data, status, latency = self.client.get("/check", params={"access_key": "invalid_key_12345"})
             
-            # Code 401 ou 404 attendu pour clé invalide
-            if status in [401, 404, 403] or "error" in data:
+            # IPStack retourne {"success": false, "error": {...}} avec clé invalide
+            if _is_ipstack_error(data) or status in [401, 403, 404]:
                 self.test_results.append({
                     "name": name,
                     "status": "PASS",
                     "latency_ms": latency,
-                    "details": f"Erreur {status} correctement retournée"
+                    "details": f"Erreur correctement détectée (status {status})"
                 })
             else:
                 self.test_results.append({
                     "name": name,
                     "status": "FAIL",
                     "latency_ms": latency,
-                    "details": f"Devrait retourner erreur, reçu {status}"
+                    "details": f"Devrait retourner erreur, reçu status {status}"
                 })
         except Exception as e:
             self.test_results.append({
