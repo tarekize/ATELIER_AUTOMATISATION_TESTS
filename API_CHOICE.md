@@ -1,0 +1,24 @@
+# API Choice
+
+- Étudiant : Tarek Zerrouken
+- API choisie : IPStack (Geolocation API)
+- URL base : https://ipstack.com/api/
+- Documentation officielle / README : https://ipstack.com/documentation
+- Auth : API Key (gratuit avec limitation : 15 appels/mois sans clé, plus avec clé gratuite)
+- Endpoints testés :
+  - GET /check?access_key={API_KEY}&ip={IP_ADDRESS} (lookup géolocalisation IP)
+  - GET /check?access_key={API_KEY} (lookup IP client)
+- Hypothèses de contrat (champs attendus, types, codes) :
+  - Code HTTP 200 attendu (succès)
+  - Code HTTP 401 (clé API invalide)
+  - Code HTTP 429 (rate limit dépassé)
+  - Champs obligatoires : `ip` (string), `country_code` (string), `city` (string), `latitude` (float), `longitude` (float), `asn` (object)
+  - Type de réponse : JSON
+- Limites / rate limiting connu :
+  - 100 appels/mois sans clé API
+  - 10 appels/minute avec API clé gratuite
+  - 429 Too Many Requests si dépassé
+- Risques (instabilité, downtime, CORS, etc.) :
+  - Service tiers dépendant de service externe
+  - CORS peut être problématique (contourné via proxy/backend)
+  - Rate limiting strict à respecter
