@@ -183,9 +183,8 @@ class IPStackTester:
         """Test 5: Tester avec IP spécifique (Google DNS)"""
         name = f"Custom IP Test ({ip_address})"
         try:
-            data, status, latency = self.client.get("/check", params={
-                "access_key": api_key,
-                "ip": ip_address
+            data, status, latency = self.client.get(f"/{ip_address}", params={
+                "access_key": api_key
             })
             
             if status == 200 and data.get("ip") == ip_address:

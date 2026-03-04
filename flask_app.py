@@ -5,13 +5,16 @@ import os
 import logging
 from datetime import datetime
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "test-secret-key-change-in-production"
 
 # Configuration
-API_KEY = os.getenv("IPSTACK_API_KEY", "your_api_key_here")  # À récupérer d'une variable d'environnement en production
-BASE_URL = "https://api.ipstack.com/api"
+API_KEY = os.getenv("IPSTACK_API_KEY", "your_api_key_here")
+BASE_URL = os.getenv("IPSTACK_BASE_URL", "http://api.ipstack.com")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,7 +69,7 @@ def history():
 
 @app.get("/run")
 def run_tests():
-    """Déclenche l'exécution des tests"""
+    """Déclenche l'exécution des tests et redirige vers le dashboard"""
     try:
         logger.info("=== Démarrage exécution tests ===")
         
@@ -79,19 +82,31 @@ def run_tests():
         
         logger.info(f"✅ Tests complétés et sauvegardés (id={run_id})")
         
+        # Rediriger vers le dashboard pour afficher les résultats
+        return redirect(url_for('dashboard'))
+    
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de l'exécution: {e}")
+        return redirect(url_for('dashboard'))
+
+@app.get("/api/run")
+def api_run_tests():
+    """API JSON pour exécuter les tests (usage programmatique)"""
+    try:
+        runner = TestRunner(base_url=BASE_URL)
+        report = runner.run(api_key=API_KEY)
+        
+        storage = TestStorage()
+        run_id = storage.save_run(report)
+        
         return jsonify({
             "status": "success",
             "message": "Tests exécutés avec succès",
             "run_id": run_id,
             "report": report
         })
-    
     except Exception as e:
-        logger.error(f"❌ Erreur lors de l'exécution: {e}")
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.get("/health")
 def health_check():
